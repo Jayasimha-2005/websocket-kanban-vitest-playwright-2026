@@ -10,6 +10,23 @@ The goal is to assess proficiency in:
 ✅ **Vitest + React Testing Library** (for unit & integration testing)  
 ✅ **Playwright** (for end-to-end testing)
 
+## 🔔 Recent updates (2026-02-07)
+
+- **E2E stability:** Playwright E2E tests updated and now pass locally (Chromium).
+- **Dev server host:** Vite dev server and HMR are bound to `127.0.0.1:3000` to avoid IPv4/IPv6 websocket mismatches on Windows.
+- **Socket test helper:** The client exposes `window.__socketConnected` during runtime — E2E tests wait for this flag before interacting to reduce race conditions.
+- **Tests:** Vitest unit & integration tests pass locally. Playwright E2E suite passes locally after stability fixes.
+
+If you maintain CI, ensure Playwright runs with `webServer` or start backend + frontend before running `npx playwright test`.
+
+## **Maintainer / Contact**
+
+- **Name:** Jayasimha Padigeri
+- **Email:** padigerijaya@gmail.com
+- **GitHub:** https://github.com/Jayasimha-2005
+
+If you prefer an alternate contact or want this moved to `CONTRIBUTING.md`, tell me and I will update it.
+
 ---
 
 ## 📂 Project Structure
