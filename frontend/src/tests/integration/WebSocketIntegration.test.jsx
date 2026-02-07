@@ -4,10 +4,13 @@ import KanbanBoard from "../../components/KanbanBoard";
 
 // mock socket.io-client library
 
-test("WebSocket receives task update", async () => {
+test("WebSocket integration renders board", async () => {
   render(<KanbanBoard />);
 
-  expect(screen.getByText("Kanban Board")).toBeInTheDocument();
+  // Check that the board elements are rendered
+  expect(screen.getByText("Create Task")).toBeInTheDocument();
+  expect(screen.getByText("To Do")).toBeInTheDocument();
+  expect(screen.getByText("In Progress")).toBeInTheDocument();
 });
 
 // TODO: Add more integration tests
