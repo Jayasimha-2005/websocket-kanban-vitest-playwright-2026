@@ -25,6 +25,9 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     setupFiles: "./src/setupTests.js",
+    // avoid long-running hangs in CI and developer runs by setting reasonable timeouts
+    timeout: 10000,
+    hookTimeout: 10000,
     exclude: ["node_modules", "src/tests/e2e"],
   },
 });

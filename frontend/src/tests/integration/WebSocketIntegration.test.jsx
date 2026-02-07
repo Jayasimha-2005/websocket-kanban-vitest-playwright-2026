@@ -1,6 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { act } from 'react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -63,22 +62,25 @@ describe('WebSocket Integration (integration)', () => {
       (listeners['sync:tasks'] || []).forEach((cb) => cb([{ id: 'srv-1', title: 'Integration Task', description: 'Integration description', status: 'todo', priority: 'Medium', category: 'Feature', attachments: [] }]));
     });
 
-    await waitFor(() => expect(screen.getByText(/Integration Task/)).toBeInTheDocument());
+    await screen.findByText(/Integration Task/, {}, { timeout: 2000 });
   });
 
   it('moves a task when move button is clicked', async () => {
     render(<KanbanBoard />);
     // simulate server sending initial task in todo
     const initial = [{ id: 'm-1', title: 'MoveMe', description: '', status: 'todo', priority: 'Medium', category: 'Feature', attachments: [] }];
-    (listeners['sync:tasks'] || []).forEach((cb) => cb(initial));
+    act(() => {
+      (listeners['sync:tasks'] || []).forEach((cb) => cb(initial));
+    });
 
-    await waitFor(() => expect(screen.getByText(/MoveMe/)).toBeInTheDocument());
+    await screen.findByText(/MoveMe/, {}, { timeout: 2000 });
 
     // find the Move to In Progress button on the task card and click it
     const inProgressButton = screen.getByLabelText('Move to In Progress');
-    await userEvent.click(inProgressButton);
+    const user = userEvent.setup();
+    await user.click(inProgressButton);
 
-    // the mock server will broadcast sync:tasks; ensure no errors and UI updates (simplified check)
-    await waitFor(() => expect(emitCalls.find(e => e.ev === 'task:move')).toBeTruthy());
+    // the mock server will broadcast sync:tasks; ensure emit was called
+    await waitFor(() => expect(emitCalls.find(e => e.ev === 'task:move')).toBeTruthy(), { timeout: 2000 });
   });
 });

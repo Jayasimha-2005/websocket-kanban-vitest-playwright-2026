@@ -19,11 +19,14 @@ const CATEGORY_OPTIONS = [
 ];
 
 function Column({ status, children, onDrop }) {
-    const [{ isOver }, dropRef] = useDrop({
-        accept: "TASK",
-        drop: (item) => onDrop(item.id, status),
-        collect: (m) => ({ isOver: m.isOver() }),
-    });
+    const [{ isOver }, dropRef] = useDrop(
+        () => ({
+            accept: "TASK",
+            drop: (item) => onDrop(item.id, status),
+            collect: (m) => ({ isOver: m.isOver() }),
+        }),
+        [onDrop, status]
+    );
 
     return (
         <div
@@ -48,8 +51,9 @@ function KanbanBoard() {
     const [attachments, setAttachments] = useState([]);
     const [fileError, setFileError] = useState("");
     const fileRef = useRef();
+    const [isDragOver, setIsDragOver] = useState(false);
 
-    console.log("KanbanBoard rendered, tasks:", tasks.length);
+    // development log removed
 
     useEffect(() => {
         function onSync(newTasks) {
@@ -77,10 +81,10 @@ function KanbanBoard() {
         });
 
         return () => {
-            socket.off("sync:tasks", onSync);
-            socket.off("error");
-        };
-    }, []);
+                socket.off("sync:tasks", onSync);
+                socket.off("error");
+            };
+        }, []);
 
     const handleCreate = useCallback(
         (e) => {
@@ -135,7 +139,7 @@ function KanbanBoard() {
                 if (fileRef.current) fileRef.current.value = null;
             }
         },
-        [title, description, priority, category, attachments]
+        [title, description, priority, category, attachments, tasks]
     );
 
     const handleDelete = useCallback((id) => {
@@ -152,21 +156,24 @@ function KanbanBoard() {
                 console.warn("Failed to save tasks to localStorage after delete", e);
             }
         }
-    }, []);
+    }, [tasks]);
 
     const handleMove = useCallback((id, status) => {
-        if (socket && socket.connected) {
-            socket.emit("task:move", { id, status }, (ack) => {
-                if (ack && ack.status === "error") return alert(`Move failed: ${ack.message}`);
-            });
-        } else {
-            const next = tasks.map((t) => (t.id === id ? { ...t, status } : t));
-            setTasks(next);
+        // Optimistically update local state so moves feel instantaneous
+        setTasks((prev) => {
+            const next = prev.map((t) => (t.id === id ? { ...t, status } : t));
             try {
                 localStorage.setItem("kanban:tasks", JSON.stringify(next));
             } catch (e) {
                 console.warn("Failed to save tasks to localStorage after move", e);
             }
+            return next;
+        });
+
+        if (socket && socket.connected) {
+            socket.emit("task:move", { id, status }, (ack) => {
+                if (ack && ack.status === "error") return alert(`Move failed: ${ack.message}`);
+            });
         }
     }, []);
 
@@ -201,16 +208,87 @@ function KanbanBoard() {
             setFileError("");
         }
 
-        const previews = accepted.map((f) => ({ name: f.name, url: URL.createObjectURL(f) }));
-        if (previews.length > 0) setAttachments((prev) => [...prev, ...previews]);
+        if (accepted.length === 0) return;
+
+        // Read accepted images as data URLs so attachments are portable (not tied to object URLs)
+        const readers = accepted.map((file) =>
+            new Promise((resolve) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve({ name: file.name, url: fr.result });
+                fr.onerror = () => resolve(null);
+                fr.readAsDataURL(file);
+            })
+        );
+
+        Promise.all(readers).then((results) => {
+            const previews = results.filter(Boolean);
+            if (previews.length > 0) setAttachments((prev) => [...prev, ...previews]);
+        });
+    }
+
+    // Handle files dropped onto the create form
+    function handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragOver(false);
+        const files = Array.from(e.dataTransfer?.files || []);
+        if (files.length === 0) return;
+
+        // Reuse same logic as file input: only accept images and convert to data URLs
+        const accepted = [];
+        const rejected = [];
+        for (const f of files) {
+            if (f.type && f.type.startsWith("image/")) accepted.push(f);
+            else rejected.push(f);
+        }
+        if (rejected.length > 0) setFileError("Some files were rejected: only image files are allowed.");
+        else setFileError("");
+
+        if (accepted.length === 0) return;
+
+        const readers = accepted.map((file) =>
+            new Promise((resolve) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve({ name: file.name, url: fr.result });
+                fr.onerror = () => resolve(null);
+                fr.readAsDataURL(file);
+            })
+        );
+
+        Promise.all(readers).then((results) => {
+            const previews = results.filter(Boolean);
+            if (previews.length > 0) setAttachments((prev) => [...prev, ...previews]);
+        });
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        setIsDragOver(true);
+    }
+
+    function handleDragLeave(e) {
+        e.preventDefault();
+        setIsDragOver(false);
     }
 
     return (
         <DndProvider backend={HTML5Backend}>
-            <div style={{ display: "flex", gap: 16 }}>
-                <div style={{ flex: 3 }}>
+            <div className="kanban-root" style={{ display: "flex", gap: 16 }}>
+                <div className="kanban-main" style={{ flex: 3 }}>
                     <div style={{ display: "flex", gap: 12 }}>
-                        <form onSubmit={handleCreate} style={{ flex: 1, padding: 12, background: "#fff", borderRadius: 8 }}>
+                        <form
+                            onSubmit={handleCreate}
+                            onDrop={handleDrop}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            style={{
+                                flex: 1,
+                                padding: 12,
+                                background: "#fff",
+                                borderRadius: 8,
+                                outline: isDragOver ? "3px dashed #4CAF50" : "none",
+                            }}
+                        >
                             <h3>Create Task</h3>
                             <div>
                                 <input data-testid="title-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={{ width: "100%" }} />
@@ -229,11 +307,11 @@ function KanbanBoard() {
                                 </div>
                             </div>
                             <div>
-                                <label>Attachments (images)</label>
+                                <label>Attachments (drag and drop the image)</label>
                                 <input data-testid="file-input" ref={fileRef} type="file" accept="image/*" multiple onChange={handleFile} />
-                                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                <div className="create-attachments" style={{ display: "flex", gap: 8, marginTop: 8 }}>
                                     {attachments.map((a, i) => (
-                                        <img key={i} src={a.url} alt={a.name} style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 6 }} />
+                                        <img key={i} data-testid="create-preview-img" className="attachment-thumb" src={a.url} alt={a.name} style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 6 }} />
                                     ))}
                                 </div>
                                 {fileError && <div data-testid="file-error" style={{ color: "#c00", marginTop: 6 }}>{fileError}</div>}
@@ -248,7 +326,7 @@ function KanbanBoard() {
                         </div>
                     </div>
 
-                    <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                    <div className="columns-row" style={{ display: "flex", gap: 12, marginTop: 16 }}>
                         <Column status="todo" onDrop={handleMove}>
                                 {tasks.filter((t) => t.status === "todo").map((t) => (
                                 <TaskCard key={t.id} task={t} onDelete={handleDelete} onMove={handleMove} onUpdate={handleUpdate} />

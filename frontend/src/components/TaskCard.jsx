@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useDrag } from "react-dnd";
 import Select from "react-select";
 import socket from "../socket";
@@ -59,16 +60,33 @@ function TaskCard({ task, onDelete, onMove, onUpdate }) {
 
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const lightboxRef = useRef(null);
+  const portalRef = useRef(null);
 
   useEffect(() => {
     if (lightboxIndex >= 0 && lightboxRef.current) {
       try {
         lightboxRef.current.focus();
-      } catch (e) {
+      } catch {
         // ignore focus errors
       }
     }
   }, [lightboxIndex]);
+
+  // Create a portal root for the lightbox to escape card stacking contexts
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const el = document.createElement("div");
+    el.className = "taskcard-lightbox-portal";
+    portalRef.current = el;
+    document.body.appendChild(el);
+    return () => {
+      try {
+        if (portalRef.current) document.body.removeChild(portalRef.current);
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   function onPriorityChange(option) {
     const updates = { priority: option?.value };
@@ -97,6 +115,48 @@ function TaskCard({ task, onDelete, onMove, onUpdate }) {
     if (added.length > 0) setEditAttachments((s) => s.concat(added));
     // clear the input value to allow re-uploading same file if needed
     e.target.value = "";
+  }
+
+  // Allow dropping files into the edit area
+  async function handleEditDropFiles(files) {
+    const list = Array.from(files || []);
+    if (list.length === 0) return;
+    const readers = list.map((file) =>
+      new Promise((resolve) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve({ name: file.name, url: fr.result });
+        fr.onerror = () => resolve(null);
+        fr.readAsDataURL(file);
+      })
+    );
+    const results = await Promise.all(readers);
+    const added = results.filter(Boolean);
+    if (added.length > 0) setEditAttachments((s) => s.concat(added));
+  }
+
+  function onEditDragOver(e) {
+    e.preventDefault();
+  }
+
+  function onEditDrop(e) {
+    e.preventDefault();
+    setEditDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      handleEditDropFiles(files);
+    }
+  }
+
+  const [editDragOver, setEditDragOver] = useState(false);
+
+  function onEditDragEnter(e) {
+    e.preventDefault();
+    setEditDragOver(true);
+  }
+
+  function onEditDragLeave(e) {
+    e.preventDefault();
+    setEditDragOver(false);
   }
 
   function removeEditAttachment(index) {
@@ -128,6 +188,7 @@ function TaskCard({ task, onDelete, onMove, onUpdate }) {
         marginBottom: 8,
         background: "#fff",
         borderRadius: 4,
+        cursor: isDragging ? "grabbing" : "grab",
       }}
       data-testid={`task-${task.id}`}
     >
@@ -175,16 +236,24 @@ function TaskCard({ task, onDelete, onMove, onUpdate }) {
 
       {editing && (
         <div style={{ marginTop: 8 }}>
-          <label style={{ display: "block", marginBottom: 6 }}>
-            Attach images:
+          <label
+            className={`task-edit-droparea ${editDragOver ? "drag-over" : ""}`}
+            onDrop={onEditDrop}
+            onDragOver={onEditDragOver}
+            onDragEnter={onEditDragEnter}
+            onDragLeave={onEditDragLeave}
+            style={{ display: "block", marginBottom: 6, padding: 6, borderRadius: 6 }}
+          >
+            Attachments (drag and drop the image)
             <input aria-label="Add attachments" type="file" accept="image/*" multiple onChange={handleFileInput} style={{ display: "block", marginTop: 6 }} />
+            <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>You can also drag & drop images here</div>
           </label>
 
           {editAttachments && editAttachments.length > 0 && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
               {editAttachments.map((a, i) => (
                 <div key={i} style={{ position: "relative" }}>
-                  <img src={a.url} alt={a.name} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 6 }} />
+                  <img className="attachment-thumb" src={a.url} alt={a.name} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 6 }} />
                   <button
                     onClick={() => removeEditAttachment(i)}
                     aria-label={`Remove attachment ${a.name}`}
@@ -231,6 +300,7 @@ function TaskCard({ task, onDelete, onMove, onUpdate }) {
           {task.attachments.map((a, i) => (
             <img
               key={i}
+              className="attachment-thumb"
               src={a.url}
               alt={a.name}
               style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
@@ -240,35 +310,38 @@ function TaskCard({ task, onDelete, onMove, onUpdate }) {
         </div>
       )}
 
-      {lightboxIndex >= 0 && task.attachments && task.attachments[lightboxIndex] && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Preview image for ${task.title}`}
-          ref={lightboxRef}
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setLightboxIndex(-1);
-          }}
-          onClick={() => setLightboxIndex(-1)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(0,0,0,0.6)",
-            zIndex: 9999,
-          }}
-        >
-          <img
-            src={task.attachments[lightboxIndex].url}
-            alt={task.attachments[lightboxIndex].name}
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8 }}
-          />
-        </div>
-      )}
+      {portalRef.current && lightboxIndex >= 0 && task.attachments && task.attachments[lightboxIndex] &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Preview image for ${task.title}`}
+            ref={lightboxRef}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setLightboxIndex(-1);
+            }}
+            onClick={() => setLightboxIndex(-1)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(0,0,0,0.6)",
+              zIndex: 99999,
+            }}
+          >
+            <img
+              className="attachment-lightbox"
+              src={task.attachments[lightboxIndex].url}
+              alt={task.attachments[lightboxIndex].name}
+              onClick={(e) => e.stopPropagation()}
+              style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8 }}
+            />
+          </div>,
+          portalRef.current
+        )}
     </div>
   );
 }

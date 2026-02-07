@@ -122,14 +122,33 @@ label {
   color: #fff;
 }
 
-/* Attachment thumbnails */
-[data-testid^="task-"] img,
-.create-attachments img {
+/* Attachment thumbnails (only target thumbnail images, not full-size previews) */
+[data-testid^="task-"] .attachment-thumb,
+.create-attachments img,
+.create-attachments .attachment-thumb {
   width: 64px;
   height: 64px;
   object-fit: cover;
   border-radius: 6px;
   border: 1px solid rgba(16,24,40,0.06);
+}
+
+/* Lightbox / full-size preview should not be constrained by thumbnail rules */
+.attachment-lightbox {
+  width: auto !important;
+  height: auto !important;
+  max-width: 90% !important;
+  max-height: 90% !important;
+  object-fit: contain !important;
+  border-radius: 8px !important;
+}
+
+/* Drag-and-drop visuals */
+.create-attachments, .task-edit-droparea {
+  transition: box-shadow 0.12s ease, transform 0.08s ease;
+}
+.task-edit-droparea.drag-over {
+  box-shadow: 0 0 0 4px rgba(76,175,80,0.12) inset;
 }
 
 /* Create form visuals */
@@ -174,4 +193,21 @@ button[aria-label] {
   .App { padding: 12px; }
   [data-testid$="-column"] { min-height: 220px; }
   .progress-chart { display: none; }
+}
+
+/* Responsive stacking for narrow screens */
+@media (max-width: 900px) {
+  .kanban-root { flex-direction: column; }
+  .kanban-main { width: 100%; }
+  .columns-row { flex-direction: column; gap: 12px; }
+  form { width: 100%; }
+  [data-testid$="-column"] { min-height: auto; }
+  .create-attachments img, .attachment-thumb { width: 48px; height: 48px; }
+}
+
+@media (max-width: 600px) {
+  h3 { font-size: 16px; }
+  [data-testid^="task-"] strong { font-size: 14px; }
+  input, textarea, button, select { font-size: 13px; }
+  .create-attachments img, .attachment-thumb { width: 40px; height: 40px; }
 }

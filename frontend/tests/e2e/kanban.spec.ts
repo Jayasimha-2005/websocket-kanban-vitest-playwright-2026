@@ -120,6 +120,6 @@ test.describe('Kanban E2E', () => {
     await page.setInputFiles('[data-testid=file-input]', [
       { name: 'sample.png', mimeType: 'image/png', buffer: Buffer.from(pngBase64, 'base64') },
     ]);
-    await expect(page.locator('img[alt="sample.png"]')).toBeVisible();
+    await expect(page.locator('img[data-testid="create-preview-img"][alt="sample.png"]')).toBeVisible();
   });
 });
