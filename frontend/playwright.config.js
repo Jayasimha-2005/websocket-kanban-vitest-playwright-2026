@@ -6,7 +6,7 @@ export default defineConfig({
   timeout: 20 * 1000, // Test timeout in milliseconds
   use: {
     headless: true,
-    baseURL: "http://localhost:3000",
+    baseURL: "http://127.0.0.1:3000",
     viewport: { width: 1300, height: 720 }, // Default viewport
   },
   projects: [
@@ -20,9 +20,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // Playwright will reuse an existing dev server at http://localhost:5173.
-    // Start your frontend with `npm run dev` and backend with `npm start` before running tests,
-    // or set `reuseExistingServer: false` and provide a start command here.
+    command: 'npm run dev',
+    port: 3000,
     reuseExistingServer: true,
+    timeout: 120000,
   },
 });

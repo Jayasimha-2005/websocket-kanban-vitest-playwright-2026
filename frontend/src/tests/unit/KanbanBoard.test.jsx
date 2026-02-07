@@ -1,67 +1,76 @@
-import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { vi, beforeEach, describe, it, expect } from "vitest";
+import React from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 
-// Create handlers and emitted outside to avoid hoisting issues
-let handlers = {};
-let emitted = [];
+// We'll use a hoist-safe mock factory so Vitest doesn't try to access
+// test-scoped variables before they're initialized. The factory returns
+// a `__mock` object (listeners/emitCalls) we can import inside tests.
+let listeners;
+let emitCalls;
+vi.mock('../../socket', () => {
+  const _listeners = {};
+  const _emitCalls = [];
+  const mockSocket = {
+    connected: true,
+    on: (ev, cb) => {
+      _listeners[ev] = _listeners[ev] || [];
+      _listeners[ev].push(cb);
+    },
+    off: (ev, cb) => {
+      if (!_listeners[ev]) return;
+      _listeners[ev] = _listeners[ev].filter((f) => f !== cb);
+    },
+    emit: (ev, payload, ack) => {
+      _emitCalls.push({ ev, payload });
+      if (typeof ack === 'function') {
+        ack({ status: 'ok', task: { id: 'server-1', ...payload } });
+      }
+    },
+  };
+  return { default: mockSocket, __mock: { listeners: _listeners, emitCalls: _emitCalls } };
+});
 
-// Mock socket before import
-vi.mock("../../socket", () => ({
-  default: {
-    on: (evt, cb) => {
-      handlers[evt] = handlers[evt] || [];
-      handlers[evt].push(cb);
-    },
-    off: (evt, cb) => {
-      if (!evt) return;
-      handlers[evt] = (handlers[evt] || []).filter((c) => c !== cb);
-    },
-    emit: (evt, payload, ack) => {
-      emitted.push({ evt, payload });
-      if (typeof ack === "function") ack({ status: "ok" });
-    },
-    _trigger: (evt, payload) => {
-      (handlers[evt] || []).forEach((cb) => cb(payload));
-    },
-  },
-}));
+import KanbanBoard from '../../components/KanbanBoard';
 
-import KanbanBoard from "../../components/KanbanBoard";
-import socket from "../../socket";
-
-describe("KanbanBoard (socket-driven)", () => {
-  beforeEach(() => {
-    // clear handlers and emitted
-    handlers = {};
-    emitted = [];
+describe('KanbanBoard (unit)', () => {
+  beforeEach(async () => {
+    // import the mocked module to get access to its internal __mock
+    const mod = await vi.importMock('../../socket');
+    listeners = mod.__mock.listeners;
+    emitCalls = mod.__mock.emitCalls;
+    // clear listeners and emits
+    for (const k of Object.keys(listeners)) delete listeners[k];
+    emitCalls.length = 0;
   });
 
-  it("renders tasks when server syncs", async () => {
+  it('renders tasks when server syncs', async () => {
     render(<KanbanBoard />);
-
-    const sample = [
-      { id: "1", title: "Task One", description: "desc", status: "todo", priority: "Low", category: "Bug", attachments: [] },
-      { id: "2", title: "Task Two", description: "desc2", status: "done", priority: "High", category: "Feature", attachments: [] },
-    ];
 
     // simulate server sending tasks
-    socket._trigger("sync:tasks", sample);
+    const sample = [{ id: 't-1', title: 'Hello', description: 'desc', status: 'todo', priority: 'Medium', category: 'Feature', attachments: [] }];
+    // call any registered sync:tasks listeners
+    (listeners['sync:tasks'] || []).forEach((cb) => cb(sample));
 
-    await waitFor(() => expect(screen.getByText("Task One")).toBeTruthy());
-    expect(screen.getByText("Task Two")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Hello/)).toBeInTheDocument());
   });
 
-  it("emits delete event when delete button clicked", async () => {
+  it('emits task:create when creating a task while connected', async () => {
     render(<KanbanBoard />);
-    const sample = [{ id: "x1", title: "DeleteMe", description: "", status: "todo", priority: "Low", category: "Bug", attachments: [] }];
-    socket._trigger("sync:tasks", sample);
+    const user = userEvent.setup();
 
-    await waitFor(() => expect(screen.getByText("DeleteMe")).toBeTruthy());
-    const btn = screen.getByLabelText("delete");
-    await userEvent.click(btn);
+    // fill title and click create
+    const titleInput = screen.getByTestId('title-input');
+    await user.type(titleInput, 'New Task');
 
-    expect(emitted.find((e) => e.evt === "task:delete" && e.payload && e.payload.id === "x1")).toBeTruthy();
+    const createButton = screen.getByTestId('create-button');
+    await user.click(createButton);
+
+    // emit should have been called with task:create
+    await waitFor(() => {
+      const found = emitCalls.find((e) => e.ev === 'task:create');
+      expect(found).toBeTruthy();
+      expect(found.payload.title).toBe('New Task');
+    });
   });
 });
